@@ -15,12 +15,12 @@ RUN \
 		https://releases.hashicorp.com/vagrant/2.2.6/vagrant_2.2.6_x86_64.rpm \
 		libvirt-devel ruby-devel gcc libxslt-devel libxml2-devel make \
 		python3-pip \
-		libvirt qemu-kvm rsync openssh-clients \
+		libvirt qemu-kvm rsync sudo openssh-clients \
 	&& runuser -u "$VAGRANT_USER" -p -- vagrant plugin install vagrant-libvirt \
 	&& python3 -m pip install dumb-init==1.2.2 \
 	&& yum -y remove \
-		libvirt-devel ruby-devel gcc libxslt-devel libxml2-devel make \
-		python3-pip \
+		libvirt-devel ruby-devel gcc libxslt-devel libxml2-devel \
+		python3-pip \*-headers \*-devel \
 	&& yum clean all
 
 COPY sbin/ /sbin/
