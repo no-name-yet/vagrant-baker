@@ -36,7 +36,8 @@ main() {
 
     vagrant_app_dir="${vagrant_app_dir:?Path to Vagrant App missing}"
     if [[ "$vagrant_app_dir" != "$VAGRANT_CWD" ]]; then
-        shopt -s nullglob failglob dotglob
+        shopt -s nullglob failglob
+        shopt -u dotglob
         cp -vRL -t "$VAGRANT_CWD" "$vagrant_app_dir"/*
         chown -vR "$VAGRANT_USER:$VAGRANT_USER" "$VAGRANT_CWD"
     fi
