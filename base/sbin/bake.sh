@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 # bake.sh - Helper script from creating container images with pre-baked Vagrant
 #           environment
 #
@@ -55,14 +55,19 @@ parse_args() {
             box_only=true;;
         --)
             shift; break;;
-        -.*)
+        -?*)
             options+="$1";;
         *)
-            vagrant_app_dir="$1"; shift; break;;
+            if [[ $vagrant_app_dir ]]; then
+                other_args+=("$1")
+            else
+                vagrant_app_dir="$1"
+            fi
+            ;;
         esac
         shift
     done
-    other_args=("$@")
+    other_args+=("$@")
 }
 
 vagrant_up_down() {
@@ -72,10 +77,13 @@ vagrant_up_down() {
     # we don't want to quote here on purpose so we don't pass an empty string
     # when 'box_only' is blank (false)
     # shellcheck disable=2086
-    vagrant up ${box_only:+--no-provision} "$@"
-    vagrant halt
+    (
+        set -x
+        vagrant up ${box_only:+--no-provision} "$@"
+        vagrant halt
+    )
     if [[ $box_only ]]; then
-        vagrant destroy -f
+        ( set -x; vagrant destroy -f; )
     fi
 }
 
@@ -90,7 +98,10 @@ hardlink_boxes() {
         \! \( -user qemu -group qemu \) -print0 \
         | xargs -0 -r sudo -n chown -v qemu:qemu
     # Hardlink boxes to the copies in the libvirt pool
-    sudo -n hardlink -c -vv /var/lib/libvirt/images "$VAGRANT_HOME/boxes"
+    (
+        set -x
+        sudo -n hardlink -c -f -vv /var/lib/libvirt/images "$VAGRANT_HOME/boxes"
+    )
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
