@@ -1,1 +1,4 @@
 *.swp
+.containers/*
+.oci/*
+.registry-auth.json
