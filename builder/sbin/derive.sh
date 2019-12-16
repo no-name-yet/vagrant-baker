@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 # derive.sh - A script for deriving a Vagrant-based image from another using
 #             buildah
 #
@@ -26,22 +26,19 @@
 # for the default value of that variable.
 #
 main() {
-    local from='' to='' app_dir='' to_skopeo='' to_push='' container
-    local -a other_args
+    local from='' to='' app_dir='' container
+    local -a publish_args other_args
 
     parse_args "$@"
 
+    set -x
     container="$(sudo buildah from "$from")"
     setup_mounts "$container"
     bake.sh "$app_dir" "${other_args[@]}"
+    hardlink_boxes "$container"
     teardown_mounts "$container"
     sudo buildah commit --rm "$container" "$to"
-    if [[ $to_push ]]; then
-        sudo buildah push "$to"
-    fi
-    if [[ $to_skopeo ]]; then
-        sudo skopeo copy "containers-storage:$to" "$to_skopeo"
-    fi
+    publish.sh "${publish_args[@]}" "$to"
 }
 
 parse_args() {
@@ -50,18 +47,18 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
         --push)
-            to_push=true;;
+            publish_args+=("$1");;
         --skopeo)
-            to_skopeo="$2"; shift;;
+            publish_args+=("$1" "$2"); shift;;
         --)
-            other_args+="$1"; shift; break;;
-        -.*)
-            other_args+="$1";;
+            other_args+=("$1"); shift; break;;
+        -?*)
+            other_args+=("$1");;
         *)
             if [[ ${#positional[@]} -lt 3 ]]; then
                 positional+=("$1")
             else
-                other_args+="$1"
+                other_args+=("$1")
             fi;;
         esac
         shift
@@ -103,6 +100,19 @@ teardown_mounts() {
     done
     sudo buildah umount "$container"
     sudo libvirtd -d
+}
+
+hardlink_boxes() {
+    # While this is also done in bake.sh, we need to redo it here, because it
+    # sometimes fails to work across different mount points
+    local container container_mp
+    container="${1:?}"
+
+    container_mp="$(sudo buildah mount "$container")"
+
+    sudo -n hardlink -c -f -vv \
+        "$container_mp/var/lib/libvirt/images" \
+        "${container_mp}$VAGRANT_HOME/boxes"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
