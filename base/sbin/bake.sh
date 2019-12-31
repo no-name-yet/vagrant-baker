@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 # bake.sh - Helper script from creating container images with pre-baked Vagrant
 #           environment
 #
@@ -21,26 +21,87 @@
 # Note: Since the 80_vagrant_sh.sh entry point runs its arguments as the vagrant
 #       user, this script expects to be running as that user
 #
+# In addition to a path to a Vagrantfile, to following options can be passed to
+# this script:
+# --box-only - Don't leave configured VMs in the image, only downloaded boxes
+#              This is useful for making containers with pre-cached images for
+#              further customization
+#
+# All other arguments to this script are passed directly to `vagrant up`
+#
 main() {
-    local vagrant_app_dir="${1:?Path to Vagrant App missing}"
+    local -a options other_args
+    local vagrant_app_dir='' box_only=''
+    parse_args "$@"
+
+    vagrant_app_dir="${vagrant_app_dir:?Path to Vagrant App missing}"
     if [[ "$vagrant_app_dir" != "$VAGRANT_CWD" ]]; then
-        shopt -s nullglob failglob dotglob
-        cp -RL -t "$VAGRANT_CWD" "$vagrant_app_dir"/*
-        chown -R "$VAGRANT_USER:$VAGRANT_USER" "$VAGRANT_CWD"
+        shopt -s nullglob failglob
+        shopt -u dotglob
+        cp -vRL -t "$VAGRANT_CWD" "$vagrant_app_dir"/*
+        chown -vR "$VAGRANT_USER:$VAGRANT_USER" "$VAGRANT_CWD"
     fi
-    vagrant_up_down
-    clean_boxes
+    vagrant_up_down "$box_only" "${options[@]}" "${other_args[@]}"
+    hardlink_boxes
+    if [[ $box_only ]] && [[ "$vagrant_app_dir" != "$VAGRANT_CWD" ]]; then
+        rm -rf "${VAGRANT_CWD:?}"/*
+    fi
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --box-only)
+            box_only=true;;
+        --)
+            shift; break;;
+        -?*)
+            options+="$1";;
+        *)
+            if [[ $vagrant_app_dir ]]; then
+                other_args+=("$1")
+            else
+                vagrant_app_dir="$1"
+            fi
+            ;;
+        esac
+        shift
+    done
+    other_args+=("$@")
 }
 
 vagrant_up_down() {
-    vagrant up
-    vagrant halt
+    local box_only="${1?:}"
+    shift
+
+    # we don't want to quote here on purpose so we don't pass an empty string
+    # when 'box_only' is blank (false)
+    # shellcheck disable=2086
+    (
+        set -x
+        vagrant up ${box_only:+--no-provision} "$@"
+        vagrant halt
+    )
+    if [[ $box_only ]]; then
+        ( set -x; vagrant destroy -f; )
+    fi
 }
 
-clean_boxes() {
-    vagrant box list --machine-readable \
-        | sed -nre 's/^[0-9]+,,box-name,(.*)$/\1/p' \
-        | xargs -rn 1 vagrant box remove -f --all
+hardlink_boxes() {
+    # Ensure all boxes can be read by the qemu user
+    # Note: we must not run chown or chmod on any files that do not need it
+    # because if causes overlayfs2 to copy the file even is the mode/owner is
+    # not actually changed
+    find "$VAGRANT_HOME/boxes" -type f -name \*.img \! -perm 444 -print0 \
+        | xargs -0 -r sudo -n chmod -v 444
+    find "$VAGRANT_HOME/boxes" -type f -name \*.img \
+        \! \( -user qemu -group qemu \) -print0 \
+        | xargs -0 -r sudo -n chown -v qemu:qemu
+    # Hardlink boxes to the copies in the libvirt pool
+    (
+        set -x
+        sudo -n hardlink -c -f -vv /var/lib/libvirt/images "$VAGRANT_HOME/boxes"
+    )
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
