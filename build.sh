@@ -125,6 +125,8 @@ build_all_images() {
     build_base_image "$tag_prefix" base "$@"
     build_base_image "$tag_prefix" builder "$@"
     build_box_image "$tag_prefix" centos8-single base "$@"
+    build_box_image "$tag_prefix" centos7-single base "$@"
+    build_box_image "$tag_prefix" centos7-8 centos7-single "$@"
 }
 
 build_base_image() {
