@@ -31,7 +31,7 @@ main() {
             skopeo_name="$(get_full_skopeo_name "$to_skopeo" "$image")"
             (
                 set -x
-                sudo skopeo copy "containers-storage:$image" "$skopeo_name"
+                sudo buildah push "$image" "$skopeo_name"
             )
         done
     fi
